@@ -1,0 +1,16 @@
+[
+  {
+    "ip": "192.168.0.1",
+    "mac": "8C:86:DD:93:7A:60",
+    "vendor": "Unknown Vendor / Custom Hardware",
+    "is_randomized": false,
+    "status": "online"
+  },
+  {
+    "ip": "172.30.38.176",
+    "mac": "00:15:5D:A0:84:C5",
+    "vendor": "Unknown Vendor / Custom Hardware",
+    "is_randomized": false,
+    "status": "online"
+  }
+]

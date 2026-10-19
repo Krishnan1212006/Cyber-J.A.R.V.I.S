@@ -1,0 +1,38 @@
+{
+  "target": "scanme.nmap.org",
+  "scan_type": "network",
+  "risk_summary": {
+    "score": 100.0,
+    "risk_level": "LOW RISK",
+    "confirmed": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 0
+    },
+    "potential": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 0
+    },
+    "informational_count": 0,
+    "incomplete_scanners": 0
+  },
+  "technologies": [],
+  "open_ports": [
+    {
+      "port": "22/tcp",
+      "service": "ssh",
+      "version": "OpenSSH 6.6.1p1 Ubuntu 2ubuntu2.13 (Ubuntu Linux; protocol 2.0)"
+    },
+    {
+      "port": "80/tcp",
+      "service": "http",
+      "version": "Apache httpd 2.4.7 ((Ubuntu))"
+    }
+  ],
+  "findings": []
+}

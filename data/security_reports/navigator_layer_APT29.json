@@ -1,0 +1,213 @@
+{
+  "name": "Threat Actor Profile: APT29",
+  "versions": {
+    "attack": "16",
+    "navigator": "4.5",
+    "layer": "4.5"
+  },
+  "domain": "enterprise-attack",
+  "description": "ATT&CK matrix techniques actively utilized by APT29 (G0016).",
+  "filters": {
+    "platforms": [
+      "Linux",
+      "Windows",
+      "macOS",
+      "Network",
+      "PRE"
+    ]
+  },
+  "sorting": 3,
+  "layout": {
+    "layout": "side",
+    "aggregateFunction": "max",
+    "showID": true,
+    "showName": true,
+    "showSubtechniques": "expanded"
+  },
+  "hideDisabled": false,
+  "techniques": [
+    {
+      "techniqueID": "T1621",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1003.002",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1588.002",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1090.004",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1528",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1568",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1068",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1546.003",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1547.001",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1136.003",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1098.005",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1587.003",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1005",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1105",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1651",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1566.001",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1078.004",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1053.005",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1016.001",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1587.001",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1583.006",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1090.003",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1037",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1027.006",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    },
+    {
+      "techniqueID": "T1070.004",
+      "score": 100.0,
+      "enabled": true,
+      "comment": "Observed in campaigns by APT29 (APT29, IRON RITUAL, IRON HEMLOCK)"
+    }
+  ],
+  "gradient": {
+    "colors": [
+      "#ffffff",
+      "#ef4444",
+      "#991b1b"
+    ],
+    "minValue": 100.0,
+    "maxValue": 110.0
+  },
+  "legendItems": [
+    {
+      "label": "Low / Informational",
+      "color": "#ffffff"
+    },
+    {
+      "label": "Medium Risk / Indirect Threat",
+      "color": "#ef4444"
+    },
+    {
+      "label": "High / Critical Exploit Target",
+      "color": "#991b1b"
+    }
+  ],
+  "metadata": [
+    {
+      "name": "generated_by",
+      "value": "JARVIS Cyber Defense Intelligence"
+    },
+    {
+      "name": "timestamp",
+      "value": "2026-10-19T04:00:05.264458+00:00"
+    }
+  ]
+}

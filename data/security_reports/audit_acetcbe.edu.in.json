@@ -1,0 +1,130 @@
+{
+  "target": "acetcbe.edu.in",
+  "scan_type": "unified",
+  "risk_summary": {
+    "score": 70.0,
+    "risk_level": "MODERATE RISK",
+    "confirmed": {
+      "critical": 0,
+      "high": 0,
+      "medium": 2,
+      "low": 2,
+      "info": 0
+    },
+    "potential": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 10,
+      "info": 0
+    },
+    "informational_count": 0,
+    "incomplete_scanners": 1
+  },
+  "technologies": [
+    "Server: nginx",
+    "CMS: WordPress"
+  ],
+  "open_ports": [],
+  "findings": [
+    {
+      "title": "Missing HTTP Strict Transport Security (HSTS)",
+      "severity": "medium",
+      "verification": "confirmed",
+      "category": "A02 - Cryptographic Failures",
+      "remediation": "Add 'Strict-Transport-Security: max-age=31536000; includeSubDomains' header."
+    },
+    {
+      "title": "Missing Content-Security-Policy (CSP) Header",
+      "severity": "medium",
+      "verification": "confirmed",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Configure a Content-Security-Policy header to mitigate XSS and data injection."
+    },
+    {
+      "title": "Missing X-Frame-Options Header (Clickjacking Risk)",
+      "severity": "low",
+      "verification": "confirmed",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Set 'X-Frame-Options: DENY' or 'SAMEORIGIN'."
+    },
+    {
+      "title": "Missing X-Content-Type-Options: nosniff",
+      "severity": "low",
+      "verification": "confirmed",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Set 'X-Content-Type-Options: nosniff'."
+    },
+    {
+      "title": "Platform:           Unknown",
+      "severity": "low",
+      "verification": "potential",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Review server configuration or upgrade components according to Nikto advisory."
+    },
+    {
+      "title": "Start Time:         2026-10-19 09:41:08 (GMT5.5)",
+      "severity": "low",
+      "verification": "potential",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Review server configuration or upgrade components according to Nikto advisory."
+    },
+    {
+      "title": "Server: nginx",
+      "severity": "low",
+      "verification": "potential",
+      "category": "A06 - Vulnerable and Outdated Components",
+      "remediation": "Review server configuration or upgrade components according to Nikto advisory."
+    },
+    {
+      "title": "No CGI Directories found (use '-C all' to force check all possible dirs). CGI tests skipped.",
+      "severity": "low",
+      "verification": "potential",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Review server configuration or upgrade components according to Nikto advisory."
+    },
+    {
+      "title": "[013587] /: Suggested security header missing: content-security-policy. See: https://developer.mozilla.org/en-US/docs/We",
+      "severity": "low",
+      "verification": "potential",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Review server configuration or upgrade components according to Nikto advisory."
+    },
+    {
+      "title": "[013587] /: Suggested security header missing: referrer-policy. See: https://developer.mozilla.org/en-US/docs/Web/HTTP/H",
+      "severity": "low",
+      "verification": "potential",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Review server configuration or upgrade components according to Nikto advisory."
+    },
+    {
+      "title": "[013587] /: Suggested security header missing: permissions-policy. See: https://developer.mozilla.org/en-US/docs/Web/HTT",
+      "severity": "low",
+      "verification": "potential",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Review server configuration or upgrade components according to Nikto advisory."
+    },
+    {
+      "title": "[013587] /: Suggested security header missing: strict-transport-security. See: https://developer.mozilla.org/en-US/docs/",
+      "severity": "low",
+      "verification": "potential",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Review server configuration or upgrade components according to Nikto advisory."
+    },
+    {
+      "title": "[013587] /: Suggested security header missing: x-content-type-options. See: https://developer.mozilla.org/en-US/docs/Web",
+      "severity": "low",
+      "verification": "potential",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Review server configuration or upgrade components according to Nikto advisory."
+    },
+    {
+      "title": "[000360] /securecontrolpanel/: Web Server Control Panel.",
+      "severity": "low",
+      "verification": "potential",
+      "category": "A05 - Security Misconfiguration",
+      "remediation": "Review server configuration or upgrade components according to Nikto advisory."
+    }
+  ],
+  "navigator_layer": "navigator_layer_acetcbe.edu.in.json"
+}

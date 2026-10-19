@@ -1,0 +1,81 @@
+{
+  "name": "Vulnerability Assessment: acetcbe.edu.in",
+  "versions": {
+    "attack": "16",
+    "navigator": "4.5",
+    "layer": "4.5"
+  },
+  "domain": "enterprise-attack",
+  "description": "Adversary techniques enabled by vulnerabilities discovered on acetcbe.edu.in.",
+  "filters": {
+    "platforms": [
+      "Linux",
+      "Windows",
+      "macOS",
+      "Network",
+      "PRE"
+    ]
+  },
+  "sorting": 3,
+  "layout": {
+    "layout": "side",
+    "aggregateFunction": "max",
+    "showID": true,
+    "showName": true,
+    "showSubtechniques": "expanded"
+  },
+  "hideDisabled": false,
+  "techniques": [
+    {
+      "techniqueID": "T1046",
+      "score": 50.0,
+      "enabled": true,
+      "comment": "[013587] /: Suggested security header missing: strict-transport-security. See: https://developer.mozilla.org/en-US/docs/ (Severity: LOW)"
+    },
+    {
+      "techniqueID": "T1557",
+      "score": 50.0,
+      "enabled": true,
+      "comment": "[013587] /: Suggested security header missing: x-content-type-options. See: https://developer.mozilla.org/en-US/docs/Web (Severity: LOW)"
+    },
+    {
+      "techniqueID": "T1190",
+      "score": 25.0,
+      "enabled": true,
+      "comment": "[000360] /securecontrolpanel/: Web Server Control Panel. (Severity: LOW)"
+    }
+  ],
+  "gradient": {
+    "colors": [
+      "#ffffff",
+      "#eab308",
+      "#dc2626"
+    ],
+    "minValue": 25.0,
+    "maxValue": 50.0
+  },
+  "legendItems": [
+    {
+      "label": "Low / Informational",
+      "color": "#ffffff"
+    },
+    {
+      "label": "Medium Risk / Indirect Threat",
+      "color": "#eab308"
+    },
+    {
+      "label": "High / Critical Exploit Target",
+      "color": "#dc2626"
+    }
+  ],
+  "metadata": [
+    {
+      "name": "generated_by",
+      "value": "JARVIS Cyber Defense Intelligence"
+    },
+    {
+      "name": "timestamp",
+      "value": "2026-10-19T04:12:11.543936+00:00"
+    }
+  ]
+}
