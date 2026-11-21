@@ -26,7 +26,11 @@ from .models import (
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_AGENT_DB = BASE_DIR / "data" / "jarvis_agents.db"
+DEFAULT_AGENT_DB = (
+    Path("/tmp/jarvis_data/jarvis_agents.db")
+    if __import__("os").environ.get("VERCEL")
+    else BASE_DIR / "data" / "jarvis_agents.db"
+)
 
 
 class TaskManager:

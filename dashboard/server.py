@@ -62,10 +62,16 @@ MAX_UPLOAD_MB = 500
 
 def _make_uploads_dir() -> Path:
     """Return (and create) the cross-platform uploads folder."""
+    import os as _os
+    if _os.environ.get("VERCEL"):
+        tmp_up = Path("/tmp/jarvis_uploads")
+        tmp_up.mkdir(parents=True, exist_ok=True)
+        return tmp_up
     for candidate in [
         Path.home() / "Downloads" / "JARVIS Uploads",
         Path.home() / "Documents" / "JARVIS Uploads",
         BASE_DIR / "uploads",
+        Path("/tmp/jarvis_uploads"),
     ]:
         try:
             candidate.mkdir(parents=True, exist_ok=True)

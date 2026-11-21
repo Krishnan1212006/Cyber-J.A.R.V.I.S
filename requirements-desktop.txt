@@ -1,0 +1,47 @@
+# ── Full Desktop Dependencies for JARVIS 24 (PyQt6, Voice, Vision, Windows) ─
+# Install locally with:  pip install -r requirements-desktop.txt
+-r requirements.txt
+
+PyQt6
+qrcode[pil]
+google-generativeai
+ollama
+ddgs>=9.0.0
+
+# Speech-to-Text & Audio Capture
+sounddevice
+SoundCard
+faster-whisper
+ctranslate2
+vosk
+
+# Text-to-Speech & Playback
+edge-tts
+miniaudio
+pygame
+pyttsx3
+
+# Vision, Screen & Desktop Automation
+pillow
+opencv-python
+numpy
+mss
+send2trash
+pyautogui
+pyperclip
+pygetwindow
+playwright
+
+# Windows Platform Specifics
+comtypes; sys_platform == "win32"
+pycaw; sys_platform == "win32"
+win10toast; sys_platform == "win32"
+pywinauto; sys_platform == "win32"
+pywin32; sys_platform == "win32"
+uiautomation; sys_platform == "win32"
+winsdk; sys_platform == "win32"
+
+# GPU Acceleration (CUDA 12 Windows Wheels)
+nvidia-cublas-cu12; sys_platform == "win32"
+nvidia-cudnn-cu12; sys_platform == "win32"
+nvidia-cuda-nvrtc-cu12; sys_platform == "win32"
