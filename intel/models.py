@@ -14,6 +14,20 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# Canonical cybersecurity news source identifiers
+SOURCE_THEHACKERNEWS = "thehackernews"
+SOURCE_HACKLIDO = "hacklido"
+SOURCE_BLEEPINGCOMPUTER = "bleepingcomputer"
+SOURCE_CYBERSECURITYNEWS = "cybersecuritynews"
+
+ALL_CYBER_SOURCES = [
+    SOURCE_THEHACKERNEWS,
+    SOURCE_HACKLIDO,
+    SOURCE_BLEEPINGCOMPUTER,
+    SOURCE_CYBERSECURITYNEWS,
+]
+
+
 @dataclass
 class Article:
     """Represents an ingested cybersecurity article."""
@@ -34,14 +48,19 @@ class Article:
     # Additional metadata
     updated_at: str = ""
     raw_html_path: Optional[str] = None
+    content_accessible: str = "full"  # 'full', 'partial', 'summary_only'
 
-    # Extensible fields for Phase 2 (Threat Analysis & Entities)
+    # Extensible fields for Threat Analysis & Entities
     cve_ids: list[str] = field(default_factory=list)
     threat_actors: list[str] = field(default_factory=list)
     malware_families: list[str] = field(default_factory=list)
     target_sectors: list[str] = field(default_factory=list)
     attack_techniques: list[str] = field(default_factory=list)
+    affected_products: list[str] = field(default_factory=list)
+    severity: str = "MEDIUM"  # 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'
+    confidence: str = "HIGH"  # 'HIGH', 'MEDIUM', 'LOW'
     analysis_status: str = "pending"  # 'pending', 'analyzed', 'failed'
+    analysis_version: str = "v1"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert Article to a dictionary suitable for serialization/storage."""
@@ -59,6 +78,7 @@ class Article:
             "malware_families",
             "target_sectors",
             "attack_techniques",
+            "affected_products",
         ]
         for f in list_fields:
             val = parsed.get(f)

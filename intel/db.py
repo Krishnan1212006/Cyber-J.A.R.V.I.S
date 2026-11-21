@@ -8,6 +8,7 @@ import json
 import re
 import sqlite3
 import threading
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, Optional
@@ -90,13 +91,20 @@ class IntelligenceDB:
                     malware_families    TEXT DEFAULT '[]',
                     target_sectors      TEXT DEFAULT '[]',
                     attack_techniques   TEXT DEFAULT '[]',
-                    analysis_status     TEXT DEFAULT 'pending'
+                    analysis_status     TEXT DEFAULT 'pending',
+                    content_accessible  TEXT DEFAULT 'full',
+                    affected_products   TEXT DEFAULT '[]',
+                    severity            TEXT DEFAULT 'MEDIUM',
+                    confidence          TEXT DEFAULT 'HIGH',
+                    analysis_version    TEXT DEFAULT 'v1'
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_thn_url ON thn_articles(url);
                 CREATE INDEX IF NOT EXISTS idx_thn_content_hash ON thn_articles(content_hash);
                 CREATE INDEX IF NOT EXISTS idx_thn_published_at ON thn_articles(published_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_thn_analysis_status ON thn_articles(analysis_status);
+                CREATE INDEX IF NOT EXISTS idx_thn_source ON thn_articles(source);
+                CREATE VIEW IF NOT EXISTS cyber_news_articles AS SELECT * FROM thn_articles;
 
                 -- Collection Run Logging
                 CREATE TABLE IF NOT EXISTS collection_runs (
@@ -382,8 +390,77 @@ class IntelligenceDB:
                     INSERT INTO information_pages_fts(rowid, title, summary, content, tags)
                     VALUES (new.rowid, new.title, new.summary, new.content, new.tags);
                 END;
+
+                -- Module 2: Cyber News Briefings Table
+                CREATE TABLE IF NOT EXISTS cyber_news_briefings (
+                    briefing_id         TEXT PRIMARY KEY,
+                    title               TEXT NOT NULL,
+                    content             TEXT NOT NULL,
+                    time_window         TEXT DEFAULT '24h',
+                    sources_included    TEXT DEFAULT '[]',
+                    article_ids         TEXT DEFAULT '[]',
+                    critical_alerts     TEXT DEFAULT '[]',
+                    emerging_threats    TEXT DEFAULT '[]',
+                    recommended_actions TEXT DEFAULT '[]',
+                    created_at          TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_briefing_created_at ON cyber_news_briefings(created_at DESC);
+
+                -- Module 2: Detailed Cyber Investigations Table
+                CREATE TABLE IF NOT EXISTS cyber_investigations (
+                    investigation_id    TEXT PRIMARY KEY,
+                    article_id          TEXT,
+                    title               TEXT NOT NULL,
+                    content             TEXT NOT NULL,
+                    sources_referenced  TEXT DEFAULT '[]',
+                    mitre_techniques    TEXT DEFAULT '[]',
+                    cves                TEXT DEFAULT '[]',
+                    language            TEXT DEFAULT 'en',
+                    created_at          TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_investigation_created_at ON cyber_investigations(created_at DESC);
+
+                -- Module 2: Cyber Bookmarks Table
+                CREATE TABLE IF NOT EXISTS cyber_bookmarks (
+                    bookmark_id         TEXT PRIMARY KEY,
+                    item_type           TEXT NOT NULL DEFAULT 'article',
+                    item_id             TEXT NOT NULL,
+                    title               TEXT NOT NULL,
+                    source              TEXT DEFAULT '',
+                    url                 TEXT DEFAULT '',
+                    notes               TEXT DEFAULT '',
+                    created_at          TEXT NOT NULL,
+                    UNIQUE(item_type, item_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_bookmark_created_at ON cyber_bookmarks(created_at DESC);
+
+                -- Module 2: User Reading History Table
+                CREATE TABLE IF NOT EXISTS cyber_reading_history (
+                    history_id          TEXT PRIMARY KEY,
+                    article_id          TEXT NOT NULL,
+                    title               TEXT DEFAULT '',
+                    source              TEXT DEFAULT '',
+                    url                 TEXT DEFAULT '',
+                    mode                TEXT DEFAULT 'briefing',
+                    read_at             TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_reading_history_read_at ON cyber_reading_history(read_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_reading_history_article ON cyber_reading_history(article_id);
                 """
             )
+            # Auto-migrate thn_articles columns for existing databases
+            for col_name, col_sql in [
+                ("content_accessible", "TEXT DEFAULT 'full'"),
+                ("affected_products", "TEXT DEFAULT '[]'"),
+                ("severity", "TEXT DEFAULT 'MEDIUM'"),
+                ("confidence", "TEXT DEFAULT 'HIGH'"),
+                ("analysis_version", "TEXT DEFAULT 'v1'"),
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE thn_articles ADD COLUMN {col_name} {col_sql};")
+                except sqlite3.OperationalError:
+                    pass
+
             conn.commit()
 
     # ── Deduplication Checks ───────────────────────────────────────────────────
@@ -455,8 +532,9 @@ class IntelligenceDB:
                         article_id, source, title, url, author, published_at,
                         collected_at, category, tags, summary, content, content_hash,
                         updated_at, raw_html_path, cve_ids, threat_actors,
-                        malware_families, target_sectors, attack_techniques, analysis_status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        malware_families, target_sectors, attack_techniques, analysis_status,
+                        content_accessible, affected_products, severity, confidence, analysis_version
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         article.article_id,
@@ -479,6 +557,11 @@ class IntelligenceDB:
                         json.dumps(article.target_sectors or []),
                         json.dumps(article.attack_techniques or []),
                         article.analysis_status,
+                        getattr(article, "content_accessible", "full"),
+                        json.dumps(getattr(article, "affected_products", []) or []),
+                        getattr(article, "severity", "MEDIUM"),
+                        getattr(article, "confidence", "HIGH"),
+                        getattr(article, "analysis_version", "v1"),
                     ),
                 )
                 conn.commit()
@@ -523,21 +606,57 @@ class IntelligenceDB:
         """Check if an article with the given content hash already exists."""
         return self.get_article_by_content_hash(content_hash) is not None
 
-
-    def get_articles(self, limit: int = 50, offset: int = 0) -> list[Article]:
-        """Fetch recent articles ordered by published_at DESC."""
+    def get_articles(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        source: Optional[str] = None,
+    ) -> list[Article]:
+        """Fetch recent articles ordered by published_at DESC, optionally filtered by source."""
         with self.connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM thn_articles ORDER BY published_at DESC LIMIT ? OFFSET ?",
-                (limit, offset),
-            ).fetchall()
+            if source:
+                rows = conn.execute(
+                    "SELECT * FROM thn_articles WHERE source = ? ORDER BY published_at DESC LIMIT ? OFFSET ?",
+                    (source, limit, offset),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM thn_articles ORDER BY published_at DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                ).fetchall()
             return [Article.from_dict(dict(r)) for r in rows]
 
-    def get_article_count(self) -> int:
-        """Return total count of stored articles."""
+    def get_article_count(self, source: Optional[str] = None) -> int:
+        """Return total count of stored articles, optionally filtered by source."""
         with self.connection() as conn:
-            row = conn.execute("SELECT COUNT(*) AS cnt FROM thn_articles").fetchone()
+            if source:
+                row = conn.execute("SELECT COUNT(*) AS cnt FROM thn_articles WHERE source = ?", (source,)).fetchone()
+            else:
+                row = conn.execute("SELECT COUNT(*) AS cnt FROM thn_articles").fetchone()
             return int(row["cnt"]) if row else 0
+
+    def get_source_stats(self) -> dict[str, dict[str, Any]]:
+        """Return article counts, latest collection time, and latest publication date by source."""
+        stats: dict[str, dict[str, Any]] = {}
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    source,
+                    COUNT(*) as article_count,
+                    MAX(collected_at) as last_collected,
+                    MAX(published_at) as latest_published
+                FROM thn_articles
+                GROUP BY source
+                """
+            ).fetchall()
+            for r in rows:
+                stats[r["source"]] = {
+                    "article_count": r["article_count"],
+                    "last_collected": r["last_collected"],
+                    "latest_published": r["latest_published"],
+                }
+        return stats
 
     def search_articles_fts(self, query: str, limit: int = 20) -> list[Article]:
         """Execute full-text search against FTS5 table."""
@@ -1472,6 +1591,8 @@ class IntelligenceDB:
             )
             conn.commit()
 
+    record_connector_health = record_connector_status
+
     def get_all_connector_statuses(self) -> list[ConnectorHealth]:
         """Fetch latest health status for all registered connectors."""
         with self.connection() as conn:
@@ -1740,3 +1861,198 @@ class IntelligenceDB:
                     return InformationPage.from_dict(dict(row))
 
         return None
+
+    # ── Module 2: Briefings, Investigations, Bookmarks & Reading History ──────
+
+    def save_briefing(
+        self,
+        title: str,
+        content: str,
+        time_window: str = "24h",
+        sources_included: Optional[list[str]] = None,
+        article_ids: Optional[list[str]] = None,
+        critical_alerts: Optional[list[str]] = None,
+        emerging_threats: Optional[list[str]] = None,
+        recommended_actions: Optional[list[str]] = None,
+        briefing_id: Optional[str] = None,
+    ) -> str:
+        """Persist a cybersecurity news briefing."""
+        bid = briefing_id or f"briefing_{uuid.uuid4().hex[:12]}"
+        now = utc_now_iso()
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO cyber_news_briefings (
+                    briefing_id, title, content, time_window, sources_included,
+                    article_ids, critical_alerts, emerging_threats, recommended_actions, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    bid,
+                    title,
+                    content,
+                    time_window,
+                    json.dumps(sources_included or []),
+                    json.dumps(article_ids or []),
+                    json.dumps(critical_alerts or []),
+                    json.dumps(emerging_threats or []),
+                    json.dumps(recommended_actions or []),
+                    now,
+                ),
+            )
+            conn.commit()
+        return bid
+
+    def get_briefings(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Retrieve stored cybersecurity briefings."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM cyber_news_briefings ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            results = []
+            for r in rows:
+                d = dict(r)
+                for k in ("sources_included", "article_ids", "critical_alerts", "emerging_threats", "recommended_actions"):
+                    try:
+                        d[k] = json.loads(d.get(k) or "[]")
+                    except Exception:
+                        d[k] = []
+                results.append(d)
+            return results
+
+    def save_investigation(
+        self,
+        title: str,
+        content: str,
+        article_id: Optional[str] = None,
+        sources_referenced: Optional[list[str]] = None,
+        mitre_techniques: Optional[list[str]] = None,
+        cves: Optional[list[str]] = None,
+        language: str = "en",
+        investigation_id: Optional[str] = None,
+    ) -> str:
+        """Persist a detailed technical investigation report."""
+        iid = investigation_id or f"inv_{uuid.uuid4().hex[:12]}"
+        now = utc_now_iso()
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO cyber_investigations (
+                    investigation_id, article_id, title, content, sources_referenced,
+                    mitre_techniques, cves, language, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    iid,
+                    article_id,
+                    title,
+                    content,
+                    json.dumps(sources_referenced or []),
+                    json.dumps(mitre_techniques or []),
+                    json.dumps(cves or []),
+                    language,
+                    now,
+                ),
+            )
+            conn.commit()
+        return iid
+
+    def get_investigations(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Retrieve stored technical investigations."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM cyber_investigations ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            results = []
+            for r in rows:
+                d = dict(r)
+                for k in ("sources_referenced", "mitre_techniques", "cves"):
+                    try:
+                        d[k] = json.loads(d.get(k) or "[]")
+                    except Exception:
+                        d[k] = []
+                results.append(d)
+            return results
+
+    def add_bookmark(
+        self,
+        item_id: str,
+        title: str,
+        item_type: str = "article",
+        source: str = "",
+        url: str = "",
+        notes: str = "",
+    ) -> str:
+        """Add or update a cyber news bookmark."""
+        bid = f"bm_{item_type}_{item_id}"
+        now = utc_now_iso()
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO cyber_bookmarks (
+                    bookmark_id, item_type, item_id, title, source, url, notes, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (bid, item_type, item_id, title, source, url, notes, now),
+            )
+            conn.commit()
+        return bid
+
+    def remove_bookmark(self, item_id: str, item_type: str = "article") -> bool:
+        """Remove a bookmark by item_id and item_type."""
+        with self.connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM cyber_bookmarks WHERE item_type = ? AND item_id = ?",
+                (item_type, item_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_bookmarks(self, item_type: Optional[str] = None, limit: int = 50) -> list[dict[str, Any]]:
+        """Retrieve stored cyber news bookmarks."""
+        with self.connection() as conn:
+            if item_type:
+                rows = conn.execute(
+                    "SELECT * FROM cyber_bookmarks WHERE item_type = ? ORDER BY created_at DESC LIMIT ?",
+                    (item_type, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM cyber_bookmarks ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def record_reading_history(
+        self,
+        article_id: str,
+        title: str = "",
+        source: str = "",
+        url: str = "",
+        mode: str = "briefing",
+    ) -> str:
+        """Record user reading/briefing interaction with an article."""
+        hid = f"read_{uuid.uuid4().hex[:12]}"
+        now = utc_now_iso()
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO cyber_reading_history (
+                    history_id, article_id, title, source, url, mode, read_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (hid, article_id, title, source, url, mode, now),
+            )
+            conn.commit()
+        return hid
+
+    def get_reading_history(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Retrieve user reading history."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM cyber_reading_history ORDER BY read_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]

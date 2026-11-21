@@ -76,10 +76,11 @@ class SmartResponseRouter:
 
     # Explicit phrases forcing CYBERSECURITY_REPORT
     CYBERSECURITY_PATTERNS = [
-        r"\b(?:cybersecurity|threat report|threat analysis|vulnerability assessment)\b",
-        r"\b(?:mitre att&ck|attack technique|owasp|cve-\d{4}-\d+|zero-day|cve analysis)\b",
-        r"\b(?:malware analysis|ransomware|threat actor|apt\d+|phishing campaign)\b",
-        r"\b(?:incident response report|security audit|penetration testing report)\b",
+        r"\b(?:cyber\s*security|cyber\s*threat|cyber\s*intel|threat report|threat analysis|vulnerability assessment)\b",
+        r"\b(?:mitre att&ck|attack technique|owasp|cve-\d{4}-\d+|zero-day|cve analysis|cve search)\b",
+        r"\b(?:malware analysis|ransomware|threat actor|apt\d+|phishing campaign|data breach)\b",
+        r"\b(?:incident response report|security audit|penetration testing report|security advisory)\b",
+        r"\b(?:cyber\s*(?:news|feed|newspaper|bulletin|briefing|headlines))\b",
     ]
 
     # Explicit phrases forcing INFORMATION_PAGE
@@ -88,6 +89,15 @@ class SmartResponseRouter:
         r"\b(?:detailed explanation|comprehensive overview|detailed research|full breakdown)\b",
         r"\b(?:compare and contrast|detailed comparison|complete guide to|everything about)\b",
         r"\b(?:thorough explanation|detailed breakdown|in-depth analysis)\b",
+    ]
+
+    # Explicit phrases for image / visual analysis
+    IMAGE_ANALYSIS_PATTERNS = [
+        r"\b(?:analy[sz]e (?:this |the )?(?:image|picture|photo|png|jpg|jpeg|screenshot|diagram|graphic|attachment))\b",
+        r"\b(?:what (?:is|does) (?:this |the )?(?:image|png|jpg|picture|diagram|screenshot) (?:show|contain|say))\b",
+        r"\b(?:explain (?:this |the )?(?:image|diagram|chart|screenshot|png|jpg))\b",
+        r"\b(?:extract text (?:from |in )?(?:this |the )?(?:image|png|jpg|screenshot))\b",
+        r"\b(?:ocr (?:this |the )?(?:image|png|jpg|screenshot))\b",
     ]
 
     # Conversational greetings, simple calculation, one-liners that must remain CHAT
@@ -170,7 +180,25 @@ class SmartResponseRouter:
         has_cyber = any(re.search(pat, text_lower) for pat in self.CYBERSECURITY_PATTERNS)
         is_detail_requested = any(re.search(pat, text_lower) for pat in self.INFO_PAGE_PATTERNS)
 
-        if has_cyber and (is_detail_requested or "report" in text_lower or "analysis" in text_lower or "explain" in text_lower):
+        # 6. Check for image / visual analysis request
+        is_image_analysis = any(re.search(pat, text_lower) for pat in self.IMAGE_ANALYSIS_PATTERNS) or ("image attachment analysis" in text_lower)
+        if is_image_analysis:
+            category = "Cybersecurity Visual Analysis" if has_cyber else "Image Intelligence"
+            mode = PresentationMode.CYBERSECURITY_REPORT if has_cyber else PresentationMode.INFORMATION_PAGE
+            return RouteDecision(
+                mode=mode,
+                is_detailed=True,
+                category=category,
+                topic=self._extract_topic(raw_text),
+                reasoning="User requested visual analysis, OCR, or inspection of an uploaded image/diagram.",
+                confidence=0.97,
+            )
+
+        has_news_or_report = any(w in text_lower for w in (
+            "news", "newspaper", "feed", "real time", "realtime", "bulletin",
+            "briefing", "latest", "recent", "today", "threats", "report", "analysis", "explain"
+        ))
+        if has_cyber and (is_detail_requested or has_news_or_report):
             return RouteDecision(
                 mode=PresentationMode.CYBERSECURITY_REPORT,
                 is_detailed=True,

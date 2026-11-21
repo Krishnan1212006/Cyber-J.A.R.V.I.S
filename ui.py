@@ -19,7 +19,7 @@ else:
     _WIN_HIDE: dict = {}
 
 from PyQt6.QtCore import (
-    QEasingCurve, QMimeData, QObject, QPointF, QRectF, QSize, Qt,
+    QEasingCurve, QMimeData, QObject, QPoint, QPointF, QRect, QRectF, QSize, Qt,
     QTimer, QUrl, pyqtSignal,
 )
 from PyQt6.QtGui import (
@@ -48,6 +48,20 @@ def _read_full_config() -> dict:
     try:
         return json.loads(API_FILE.read_text(encoding="utf-8"))
     except Exception:
+        return {}
+
+
+def get_dashboard_browser_url() -> str:
+    """Return the correct local browser dashboard URL according to configured protocol and port."""
+    try:
+        certs = CONFIG_DIR / "certs"
+        has_ssl = (certs / "jarvis.key").exists() and (certs / "jarvis.crt").exists()
+        proto = "https" if has_ssl else "http"
+        cfg = _read_full_config()
+        port = cfg.get("dashboard_port", 8000)
+        return f"{proto}://127.0.0.1:{port}"
+    except Exception:
+        return "https://127.0.0.1:8000"
         return {}
 
 
@@ -354,7 +368,7 @@ def _format_interactive_content_html(title: str, text: str) -> str:
         <div class="actions-row" style="margin-top:6px;">
             <a class="act-btn-cyan" href="jarvis://cmd?text={cmd_deep}">⚡ DEEP DIVE WITH JARVIS</a>
             <a class="act-btn-purple" href="jarvis://cmd?text={cmd_mitre}">🛡️ MITRE ATT&CK MAPPING</a>
-            <a class="act-btn-green" href="https://127.0.0.1:8000">🌐 VIEW IN WEB DASHBOARD ↗</a>
+            <a class="act-btn-green" href="{get_dashboard_browser_url()}">🌐 VIEW IN WEB DASHBOARD ↗</a>
         </div>
     </div>
     <div class="content-body">
@@ -1117,7 +1131,7 @@ _FILE_ICONS = {
     "data":    ("🔧", "#88ddff"), "unknown": ("📎", "#888888"),
 }
 _EXT_TO_CAT = {
-    **dict.fromkeys(["jpg","jpeg","png","gif","webp","bmp","tiff","svg","ico"], "image"),
+    **dict.fromkeys(["jpg","jpeg","png","gif","webp","bmp","tiff","tif","svg","ico","jfif","avif","heic","heif"], "image"),
     **dict.fromkeys(["mp4","avi","mov","mkv","wmv","flv","webm","m4v"],         "video"),
     **dict.fromkeys(["mp3","wav","ogg","m4a","aac","flac","wma","opus"],        "audio"),
     **dict.fromkeys(["pdf"],                                                     "pdf"),
@@ -1203,7 +1217,7 @@ class FileDropZone(QWidget):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select a file for JARVIS", str(Path.home()),
             "All Files (*.*);;"
-            "Images (*.jpg *.jpeg *.png *.gif *.webp *.bmp *.svg);;"
+            "Images (*.png *.jpg *.jpeg *.webp *.gif *.bmp *.svg *.tiff *.tif *.ico *.jfif *.avif);;"
             "Documents (*.pdf *.docx *.txt *.md *.pptx);;"
             "Data (*.csv *.xlsx *.json *.xml);;"
             "Code (*.py *.js *.ts *.html *.css *.java *.cpp *.go);;"
@@ -2332,6 +2346,138 @@ class AttachmentChip(QFrame):
         lay.addWidget(del_btn)
 
 
+class _InteractiveScreenSnipper(QWidget):
+    """
+    Transparent snipping overlay for interactive screen capture:
+    - Minimizes JARVIS to reveal the user's previous open window / page.
+    - Click anywhere on the page/window to capture full screen.
+    - Or drag a rectangle to capture a specific region.
+    - Press [Esc] to cancel.
+    """
+    captured = pyqtSignal(str)   # absolute path to saved PNG screenshot
+    cancelled = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(None)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setMouseTracking(True)
+
+        screen = QApplication.primaryScreen()
+        if screen:
+            self.setGeometry(screen.virtualGeometry())
+        else:
+            self.showFullScreen()
+
+        self._start_pos: QPoint | None = None
+        self._curr_pos: QPoint | None = None
+        self._is_pressed = False
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        W, H = self.width(), self.height()
+
+        # Transparent dark veil
+        p.fillRect(0, 0, W, H, QColor(0, 15, 25, 40))
+
+        # Selection rectangle when dragging
+        if self._is_pressed and self._start_pos and self._curr_pos:
+            rect = QRect(self._start_pos, self._curr_pos).normalized()
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+            p.fillRect(rect, Qt.GlobalColor.transparent)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+            pen = QPen(QColor(C.PRI), 2, Qt.PenStyle.DashLine)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(rect)
+
+            dim_str = f"{rect.width()} × {rect.height()} px"
+            p.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+            p.setPen(QPen(QColor(C.WHITE)))
+            p.drawText(rect.x() + 6, max(20, rect.y() - 6), dim_str)
+
+        # Top HUD Banner: Instructions
+        banner_w = 680
+        banner_h = 40
+        banner_x = (W - banner_w) // 2
+        banner_y = 24
+        banner_rect = QRectF(banner_x, banner_y, banner_w, banner_h)
+
+        p.setBrush(QBrush(QColor(0, 10, 18, 235)))
+        p.setPen(QPen(QColor(C.PRI), 1.5))
+        p.drawRoundedRect(banner_rect, 6, 6)
+
+        p.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        p.setPen(QPen(QColor(C.PRI)))
+        p.drawText(
+            banner_rect,
+            Qt.AlignmentFlag.AlignCenter,
+            "📸  CLICK ANYWHERE TO CAPTURE PAGE  ·  DRAG TO SNIP REGION  ·  [ESC] CANCEL"
+        )
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._start_pos = e.globalPosition().toPoint()
+            self._curr_pos = self._start_pos
+            self._is_pressed = True
+            self.update()
+        elif e.button() == Qt.MouseButton.RightButton:
+            self._cancel()
+
+    def mouseMoveEvent(self, e):
+        if self._is_pressed:
+            self._curr_pos = e.globalPosition().toPoint()
+            self.update()
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and self._is_pressed:
+            self._is_pressed = False
+            end_pos = e.globalPosition().toPoint()
+            start_pos = self._start_pos or end_pos
+            rect = QRect(start_pos, end_pos).normalized()
+
+            self.hide()
+            QApplication.processEvents()
+
+            screen = QApplication.primaryScreen()
+            if not screen:
+                self._cancel()
+                return
+
+            if rect.width() <= 12 or rect.height() <= 12:
+                # User just clicked anywhere on the page -> full page capture!
+                pixmap = screen.grabWindow(0)
+            else:
+                pixmap = screen.grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height())
+
+            from datetime import datetime
+            uploads_dir = Path(__file__).resolve().parent / "uploads"
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            dest = uploads_dir / f"screenshot_{ts}.png"
+            pixmap.save(str(dest), "PNG")
+
+            self.close()
+            self.captured.emit(str(dest))
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Cancel):
+            self._cancel()
+        else:
+            super().keyPressEvent(e)
+
+    def _cancel(self):
+        self.close()
+        self.cancelled.emit()
+
+
 class CommandComposerWidget(QWidget):
     """
     ChatGPT-style Command Composer:
@@ -2471,6 +2617,9 @@ class CommandComposerWidget(QWidget):
         act_folder = menu.addAction("📁  Attach folder")
         act_folder.triggered.connect(self._pick_folder)
 
+        act_shot = menu.addAction("📸  Take screenshot (Click to capture)")
+        act_shot.triggered.connect(self._take_interactive_screenshot)
+
         if self._attachments:
             menu.addSeparator()
             act_clear = menu.addAction("🗑️  Remove attachments")
@@ -2481,7 +2630,7 @@ class CommandComposerWidget(QWidget):
     def _pick_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Attach files for JARVIS", str(Path.home()),
-            "All Files (*.*);;Documents (*.pdf *.docx *.txt *.md *.csv *.json *.yaml);;Code (*.py *.js *.ts *.html *.css *.sql);;Images (*.png *.jpg *.jpeg *.webp)",
+            "All Files (*.*);;Images (*.png *.jpg *.jpeg *.webp *.gif *.bmp *.svg *.tiff *.tif *.ico *.jfif *.avif);;Documents (*.pdf *.docx *.txt *.md *.csv *.json *.yaml);;Code (*.py *.js *.ts *.html *.css *.sql)",
         )
         if paths:
             for p in paths:
@@ -2494,6 +2643,36 @@ class CommandComposerWidget(QWidget):
         )
         if folder:
             self.add_attachment_path(folder)
+
+    def _take_interactive_screenshot(self):
+        # 1. Minimize main window to reveal the user's previous open window/page
+        self._main_window.showMinimized()
+
+        # 2. Short pause to allow OS window transition to complete, then display snipper
+        def _launch():
+            self._snipper = _InteractiveScreenSnipper()
+
+            def _on_captured(path_str: str):
+                self._main_window.showNormal()
+                self._main_window.activateWindow()
+                self._main_window.raise_()
+                self.add_attachment_path(path_str)
+                self._main_window._log.append_log(f"SCREENSHOT: {Path(path_str).name} captured & attached")
+                self._snipper = None
+
+            def _on_cancelled():
+                self._main_window.showNormal()
+                self._main_window.activateWindow()
+                self._main_window.raise_()
+                self._main_window._log.append_log("SCREENSHOT: Cancelled.")
+                self._snipper = None
+
+            self._snipper.captured.connect(_on_captured)
+            self._snipper.cancelled.connect(_on_cancelled)
+            self._snipper.show()
+            self._snipper.activateWindow()
+
+        QTimer.singleShot(260, _launch)
 
     def add_attachment_path(self, path_str: str):
         for att in self._attachments:
@@ -3853,7 +4032,7 @@ class MainWindow(QMainWindow):
             }}
             QPushButton:hover {{ background: {C.PRI_GHO}; border-color: {C.PRI}; color: {C.WHITE}; }}
         """)
-        open_dash.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://127.0.0.1:8000")))
+        open_dash.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(get_dashboard_browser_url())))
         hdr.addWidget(open_dash)
 
         dismiss = QPushButton("✕")
@@ -4031,11 +4210,14 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_composer"):
             self._composer.add_attachment_path(path)
         if self.on_text_command:
+            hint_action = "ask what they'd like to do with it"
+            if cat == "image":
+                hint_action = "mention you can analyze the visual contents, extract OCR text, or analyze diagrams"
             msg = (
                 f"[FILE_UPLOADED] path={path} | name={p.name} | "
                 f"type={p.suffix.lstrip('.')} | size={size} | "
                 f"Briefly tell the user you can see the file '{p.name}' "
-                f"({size}) has been uploaded and ask what they'd like to do with it."
+                f"({size}) has been uploaded and {hint_action}."
             )
             threading.Thread(target=self.on_text_command, args=(msg,), daemon=True).start()
 
@@ -4366,6 +4548,15 @@ class MainWindow(QMainWindow):
             self._input.clear()
             self.dispatch_command(txt)
 
+    def closeEvent(self, event):
+        """Cleanly notify callbacks when user closes the main desktop window."""
+        if hasattr(self, "on_close_callback") and callable(self.on_close_callback):
+            try:
+                self.on_close_callback()
+            except Exception as e:
+                print(f"[UI] Close callback error: {e}")
+        event.accept()
+
     def _apply_state(self, state: str):
         self.hud.state    = state
         self.hud.speaking = (state == "SPEAKING")
@@ -4504,6 +4695,14 @@ class JarvisUI:
     def stop_camera_stream(self) -> None:
         """Thread-safe: stop the live camera feed."""
         self._win.stop_camera_stream()
+
+    @property
+    def on_close(self):
+        return getattr(self._win, "on_close_callback", None)
+
+    @on_close.setter
+    def on_close(self, cb):
+        self._win.on_close_callback = cb
 
     @property
     def assistant_name(self) -> str:

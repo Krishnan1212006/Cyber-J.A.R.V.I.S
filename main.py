@@ -39,6 +39,11 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
+# Suppress Windows ProactorEventLoop socket-cleanup noise (WinError 10054).
+# The SelectorEventLoop works identically for JARVIS and avoids the spam.
+if _platform.system() == "Windows":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 import sounddevice as sd
 from google import genai
 from google.genai import types
@@ -658,6 +663,23 @@ class JarvisLive:
             asyncio.run_coroutine_threadsafe(_say(), loop)
         except Exception as e:
             print(f"[PluginSay] {e}")
+
+    def stop_dashboard(self) -> None:
+        """Cleanly stop the dashboard server and command loop."""
+        if self._dashboard:
+            try:
+                loop = getattr(self, "_loop", None)
+                if loop and loop.is_running():
+                    asyncio.run_coroutine_threadsafe(self._dashboard.stop(), loop)
+                elif hasattr(self._dashboard, "stop"):
+                    # synchronous or separate loop fallback
+                    asyncio.run(self._dashboard.stop())
+            except Exception as e:
+                print(f"[Dashboard] Stop error: {e}")
+
+    def _get_ai_status(self) -> str:
+        """Report live AI session connection state."""
+        return "CONNECTED" if bool(self.session) else "DISCONNECTED"
 
     def _make_remote_key(self):
         """Called from Qt main thread when user presses Remote Control."""
@@ -1648,20 +1670,26 @@ class JarvisLive:
         self._loop = asyncio.get_event_loop()
 
         # Start dashboard (optional — needs: pip install fastapi "uvicorn[standard]" cryptography)
+        # If main() already handed us an early-started dashboard, reuse it and just
+        # attach the command-processor task; don't start a second server instance.
         try:
-            from dashboard.server import DashboardServer
-            self._dashboard = DashboardServer()
-            self._dashboard.set_connect_callback(self._on_phone_connected)
-            asyncio.create_task(self._dashboard.serve())
+            if self._dashboard is None:
+                from dashboard.server import DashboardServer
+                self._dashboard = DashboardServer()
+                self._dashboard.set_connect_callback(self._on_phone_connected)
+                self._dashboard.set_ai_status_callback(self._get_ai_status)
+                asyncio.create_task(self._dashboard.serve())
             # Runs for the whole lifetime, not just inside an active session
             asyncio.create_task(self._process_dashboard_commands())
         except Exception as e:
-            print(f"[Dashboard] Disabled: {e}")
+            print(f"[DASHBOARD] Startup error: {e}")
+            self.ui.write_log(f"SYS: Dashboard error — {e}")
             self._dashboard = None
 
         while True:
             try:
                 print("[JARVIS] Connecting...")
+                print("[AI] Gemini session: CONNECTING...")
                 self.ui.set_state("THINKING")
                 config = self._build_config()
 
@@ -1693,6 +1721,7 @@ class JarvisLive:
                     print("[JARVIS] Connected.")
                     self.ui.set_state("LISTENING")
                     self.ui.write_log("SYS: JARVIS online.")
+                    print("[AI] Gemini session: CONNECTED")
 
                     if self._dashboard:
                         await self._dashboard.broadcast({"type": "status", "state": "active"})
@@ -1768,6 +1797,7 @@ class JarvisLive:
                     self._conn_backoff = 3
             finally:
                 self.session = None
+                print("[AI] Gemini session: DISCONNECTED")
                 # Only save if there was a real conversation (≥3 turns)
                 if len(self._session_log) >= 3:
                     asyncio.create_task(self._save_session_summary())
@@ -1782,16 +1812,82 @@ class JarvisLive:
             print(f"[JARVIS] Reconnecting in {delay}s...")
             await asyncio.sleep(delay)
 
+def _start_early_dashboard() -> "tuple[Any, threading.Event]":
+    """
+    Start the dashboard server immediately on launch, before JARVIS connects to Gemini.
+    Returns (DashboardServer | None, stop_event) so caller can hand the server to JarvisLive.
+    Running in its own daemon thread with its own asyncio event loop.
+    """
+    try:
+        from dashboard.server import DashboardServer, _DEPS_OK
+        if not _DEPS_OK:
+            print("[DASHBOARD] fastapi/uvicorn not installed — dashboard disabled.")
+            return None, threading.Event()
+        srv = DashboardServer()
+        stop_evt = threading.Event()
+
+        async def _runner():
+            task = asyncio.create_task(srv.serve())
+            # Wait until the stop event is set
+            loop = asyncio.get_event_loop()
+            while not stop_evt.is_set():
+                await asyncio.sleep(0.5)
+            await srv.stop()
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        def _thread_main():
+            asyncio.run(_runner())
+
+        t = threading.Thread(target=_thread_main, daemon=True, name="JARVIS-Dashboard")
+        t.start()
+        return srv, stop_evt
+    except Exception as e:
+        print(f"[DASHBOARD] Early-start error: {e}")
+        return None, threading.Event()
+
+
 def main():
+    print("[JARVIS] Desktop UI: INITIALIZING...")
     ui = JarvisUI("face.png")
+    print("[JARVIS] Desktop UI: RUNNING")
+
+    # ── Start dashboard immediately (before API-key check / Gemini connect) ──
+    # This means http(s)://127.0.0.1:8000 responds as soon as JARVIS launches,
+    # even before the voice session is established.
+    early_dashboard, early_stop_evt = _start_early_dashboard()
+
+    # Hook graceful shutdown when Qt UI closes
+    jarvis_holder = [None]
+
+    def on_ui_close():
+        print("[JARVIS] Desktop UI closing — shutting down services...")
+        early_stop_evt.set()          # stop the early dashboard if still running
+        if jarvis_holder[0]:
+            jarvis_holder[0].stop_dashboard()
+
+    ui.on_close = on_ui_close
 
     def runner():
         ui.wait_for_api_key()
         jarvis = JarvisLive(ui)
+        # Hand the already-running dashboard server to JarvisLive so it can
+        # attach callbacks and broadcast status — avoids starting a second server.
+        if early_dashboard is not None:
+            jarvis._dashboard = early_dashboard
+            jarvis._dashboard.set_connect_callback(jarvis._on_phone_connected)
+            jarvis._dashboard.set_ai_status_callback(jarvis._get_ai_status)
+            early_stop_evt.set()  # signal the early runner to exit (JarvisLive takes over)
+        jarvis_holder[0] = jarvis
         try:
             asyncio.run(jarvis.run())
         except KeyboardInterrupt:
             print("\n🔴 Shutting down...")
+        finally:
+            jarvis.stop_dashboard()
 
     threading.Thread(target=runner, daemon=True).start()
     ui.root.mainloop()

@@ -37,14 +37,19 @@ def _gemini_client():
 
     class _W:
         def generate_content(self, contents):
-            return _c.models.generate_content(model="gemini-flash-latest", contents=contents)
+            for m in ("gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash-latest"):
+                try:
+                    return _c.models.generate_content(model=m, contents=contents)
+                except Exception:
+                    continue
+            raise RuntimeError("All Gemini vision models failed or were unreachable.")
 
     return _W()
 
 
 def _detect_type(path: Path) -> str:
     ext = path.suffix.lower().lstrip(".")
-    image_exts = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "svg", "ico"}
+    image_exts = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif", "svg", "ico", "jfif", "avif", "heic", "heif"}
     video_exts = {"mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v", "3gp"}
     audio_exts = {"mp3", "wav", "ogg", "m4a", "aac", "flac", "wma", "opus"}
     code_exts  = {"py", "js", "ts", "jsx", "tsx", "html", "css", "java", "c",
@@ -86,19 +91,26 @@ def _process_image(path: Path, action: str, params: dict, speak=None) -> str:
     except ImportError:
         return "Pillow is not installed. Run: pip install Pillow"
 
-    action = action or "describe"
+    action = (action or "analyze").lower().strip()
 
-    if action in ("describe", "ocr", "analyze", "read", "extract_text"):
+    if action in ("describe", "ocr", "analyze", "read", "extract_text", "summary", "summarize", "report"):
         try:
             model  = _gemini_client()
             img    = Image.open(path)
+            # Ensure compatible mode for vision API
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+
             prompt = {
                 "describe": "Describe this image in detail.",
                 "ocr":      "Extract all text visible in this image. Return only the text, formatted clearly.",
-                "analyze":  "Analyze this image thoroughly: objects, colors, composition, any text, context.",
-                "read":     "Read all text in this image, preserving structure and formatting.",
+                "analyze":  "Analyze this image thoroughly: identify if it is a screenshot, diagram, cyber vulnerability report, code, UI, or photo. Explain all key elements, data, and context.",
+                "read":     "Read all text and information in this image, preserving structure and formatting.",
                 "extract_text": "Extract all text from this image.",
-            }.get(action, "Describe this image.")
+                "summary":  "Summarize the key information, visual data, and purpose of this image.",
+                "summarize":"Summarize the key information, visual data, and purpose of this image.",
+                "report":   "Generate a structured report on the contents, findings, and entities visible in this image.",
+            }.get(action, "Analyze this image thoroughly and explain its contents.")
 
             if params.get("instruction"):
                 prompt = params["instruction"]
@@ -112,7 +124,37 @@ def _process_image(path: Path, action: str, params: dict, speak=None) -> str:
                 return f"{result[:300]}...\n\nFull result saved to: {out}"
             return result
         except Exception as e:
-            return f"AI image analysis failed: {e}"
+            # Graceful local OCR and metadata fallback
+            try:
+                img = Image.open(path)
+                w, h = img.size
+                ext = path.suffix.lower().lstrip(".")
+                fallback_parts = [
+                    f"### Image Analysis ({ext.upper()}): {path.name}",
+                    f"- **Dimensions**: {w}x{h} px | **Mode**: {img.mode} | **Size**: {_file_size_str(path)}",
+                ]
+
+                # Check for PNG text chunks
+                if ext == "png" and getattr(img, "info", None):
+                    for k, v in list(img.info.items())[:5]:
+                        fallback_parts.append(f"- **Metadata ({k})**: {str(v)[:150]}")
+
+                # Try local OCR with pytesseract
+                try:
+                    import pytesseract
+                    import shutil
+                    t_cmd = shutil.which("tesseract") or r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+                    if os.path.exists(t_cmd):
+                        pytesseract.pytesseract.tesseract_cmd = t_cmd
+                    ocr_res = pytesseract.image_to_string(img).strip()
+                    if ocr_res:
+                        fallback_parts.append(f"\n#### Extracted Text (Local OCR):\n```text\n{ocr_res[:2500]}\n```")
+                except Exception:
+                    pass
+
+                return "\n".join(fallback_parts)
+            except Exception:
+                return f"AI image analysis failed: {e}"
 
     if action == "resize":
         width  = int(params.get("width",  0))

@@ -17,10 +17,22 @@ from .models import (
     UnifiedLink,
     ConnectorHealth,
     UserLearningProfile,
+    SOURCE_THEHACKERNEWS,
+    SOURCE_HACKLIDO,
+    SOURCE_BLEEPINGCOMPUTER,
+    SOURCE_CYBERSECURITYNEWS,
+    ALL_CYBER_SOURCES,
 )
 from .db import IntelligenceDB
 from .thn_provider import BaseDataProvider, THNDataProvider
-from .collector_service import THNCollectorService
+from .connectors import (
+    BaseCyberNewsConnector,
+    HacklidoConnector,
+    BleepingComputerConnector,
+    TheHackerNewsConnector,
+    CybersecurityNewsConnector,
+)
+from .collector_service import THNCollectorService, CyberNewsCollector
 from .security import sanitize_text, normalize_url, compute_content_hash, wrap_untrusted
 from .llm_provider import (
     BaseLLMProvider,
@@ -54,6 +66,17 @@ __all__ = [
     "BaseDataProvider",
     "THNDataProvider",
     "THNCollectorService",
+    "CyberNewsCollector",
+    "BaseCyberNewsConnector",
+    "HacklidoConnector",
+    "BleepingComputerConnector",
+    "TheHackerNewsConnector",
+    "CybersecurityNewsConnector",
+    "SOURCE_THEHACKERNEWS",
+    "SOURCE_HACKLIDO",
+    "SOURCE_BLEEPINGCOMPUTER",
+    "SOURCE_CYBERSECURITYNEWS",
+    "ALL_CYBER_SOURCES",
     "sanitize_text",
     "normalize_url",
     "compute_content_hash",

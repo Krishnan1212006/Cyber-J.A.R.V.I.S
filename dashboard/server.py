@@ -17,6 +17,7 @@ import socket
 import string
 import time
 from pathlib import Path
+from typing import Optional, Callable, Any
 
 _DEPS_OK = False
 try:
@@ -40,7 +41,22 @@ import sys
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 STATIC_DIR  = Path(__file__).parent / "static"
-PORT        = 8000
+
+def get_dashboard_port() -> int:
+    """Read configured dashboard port from api_keys.json or default to 8000."""
+    try:
+        import json as _json
+        cfg_file = BASE_DIR / "config" / "api_keys.json"
+        if cfg_file.exists():
+            with open(cfg_file, "r", encoding="utf-8") as f:
+                p = _json.load(f).get("dashboard_port")
+                if p and str(p).isdigit():
+                    return int(p)
+    except Exception:
+        pass
+    return 8000
+
+PORT        = get_dashboard_port()
 MAX_UPLOAD_MB = 500
 
 
@@ -189,7 +205,7 @@ def _ensure_network_access(port: int) -> None:
                 [bat_path], capture_output=True, timeout=8, shell=True
             )
             if r.returncode == 0:
-                print(f"[Dashboard] Firewall configured for port {port}.")
+                print(f"[DASHBOARD] Firewall configured for port {port}.")
                 try:
                     os.unlink(bat_path)
                 except Exception:
@@ -201,8 +217,8 @@ def _ensure_network_access(port: int) -> None:
         # ── ShellExecuteW: native UAC elevation (most reliable on Windows) ────
         # ShellExecuteW with verb "runas" always shows the UAC dialog regardless
         # of UAC level settings. Non-blocking — uvicorn is already running.
-        print("[Dashboard] One-time network setup required.")
-        print("[Dashboard] >>> A Windows security dialog will appear — click 'Yes' <<<")
+        print("[DASHBOARD] One-time network setup required.")
+        print("[DASHBOARD] >>> A Windows security dialog will appear — click 'Yes' <<<")
         try:
             ret = ctypes.windll.shell32.ShellExecuteW(
                 None,       # hwnd  (no parent window)
@@ -216,13 +232,13 @@ def _ensure_network_access(port: int) -> None:
                 # ShellExecuteW returns immediately; bat finishes in ~1 second.
                 # Sleep briefly so the rules are in place before the first retry.
                 time.sleep(2)
-                print(f"[Dashboard] Network setup complete — port {port} is open.")
-                print("[Dashboard] Refresh your phone browser to connect.")
+                print(f"[DASHBOARD] Network setup complete — port {port} is open.")
+                print("[DASHBOARD] Refresh your phone browser to connect.")
             else:
-                print("[Dashboard] Setup was not allowed.")
-                print("[Dashboard] Phone connections may fail until JARVIS is run as Administrator.")
+                print("[DASHBOARD] Setup was not allowed.")
+                print("[DASHBOARD] Phone connections may fail until JARVIS is run as Administrator.")
         except Exception as e:
-            print(f"[Dashboard] Firewall setup error: {e}")
+            print(f"[DASHBOARD] Firewall setup error: {e}")
         finally:
             # Cleanup after the bat has had time to run
             def _cleanup(path: str) -> None:
@@ -251,7 +267,7 @@ def _ensure_network_access(port: int) -> None:
             if py in listed.stdout:
                 return  # already allowed
 
-            print("[Dashboard] One-time network setup — enter your password in the macOS dialog.")
+            print("[DASHBOARD] One-time network setup — enter your password in the macOS dialog.")
             subprocess.run(
                 ["osascript", "-e",
                  f'do shell script "{fw_ctl} --add {py} && {fw_ctl} --unblockapp {py}"'
@@ -277,9 +293,9 @@ def _ensure_network_access(port: int) -> None:
         r = subprocess.run(["ufw", "status"], capture_output=True, text=True, timeout=5)
         if "active" in r.stdout.lower():
             if _privileged(["ufw", "allow", f"{port}/tcp"]):
-                print(f"[Dashboard] ufw: port {port} allowed.")
+                print(f"[DASHBOARD] ufw: port {port} allowed.")
             else:
-                print(f"[Dashboard] Run manually:  sudo ufw allow {port}/tcp")
+                print(f"[DASHBOARD] Run manually:  sudo ufw allow {port}/tcp")
             return
     except FileNotFoundError:
         pass
@@ -292,9 +308,9 @@ def _ensure_network_access(port: int) -> None:
             ok = (_privileged(["firewall-cmd", "--add-port", f"{port}/tcp", "--permanent"])
                   and _privileged(["firewall-cmd", "--reload"]))
             if ok:
-                print(f"[Dashboard] firewalld: port {port} allowed.")
+                print(f"[DASHBOARD] firewalld: port {port} allowed.")
             else:
-                print(f"[Dashboard] Run manually:  sudo firewall-cmd --add-port={port}/tcp --permanent && sudo firewall-cmd --reload")
+                print(f"[DASHBOARD] Run manually:  sudo firewall-cmd --add-port={port}/tcp --permanent && sudo firewall-cmd --reload")
             return
     except FileNotFoundError:
         pass
@@ -303,9 +319,9 @@ def _ensure_network_access(port: int) -> None:
         r = subprocess.run(["iptables", "-L", "INPUT", "-n"], capture_output=True, timeout=5)
         if r.returncode == 0:
             if _privileged(["iptables", "-A", "INPUT", "-p", "tcp", "--dport", str(port), "-j", "ACCEPT"]):
-                print(f"[Dashboard] iptables: port {port} opened.")
+                print(f"[DASHBOARD] iptables: port {port} opened.")
             else:
-                print(f"[Dashboard] Run manually:  sudo iptables -A INPUT -p tcp --dport {port} -j ACCEPT")
+                print(f"[DASHBOARD] Run manually:  sudo iptables -A INPUT -p tcp --dport {port} -j ACCEPT")
     except FileNotFoundError:
         pass  # no iptables means firewall is probably off — nothing to do
 
@@ -315,12 +331,12 @@ def _ensure_crypto_js() -> None:
         return
     try:
         import urllib.request
-        print("[Dashboard] Downloading CryptoJS (one-time setup)…")
+        print("[DASHBOARD] Downloading CryptoJS (one-time setup)…")
         urllib.request.urlretrieve(_CRYPTOJS_CDN, str(_CRYPTOJS_FILE))
-        print("[Dashboard] CryptoJS cached — will serve locally from now on.")
+        print("[DASHBOARD] CryptoJS cached — will serve locally from now on.")
     except Exception as e:
-        print(f"[Dashboard] CryptoJS download failed: {e}")
-        print(f"[Dashboard] Encryption will fall back to CDN load on client.")
+        print(f"[DASHBOARD] CryptoJS download failed: {e}")
+        print(f"[DASHBOARD] Encryption will fall back to CDN load on client.")
 
 
 _ensure_crypto_js()
@@ -390,8 +406,8 @@ def _ensure_certs() -> bool:
         from cryptography.hazmat.primitives.asymmetric import rsa
         from cryptography.x509.oid import NameOID
     except ImportError:
-        print("[Dashboard] cryptography not installed — serving over plain HTTP.")
-        print("[Dashboard] For HTTPS run:  pip install cryptography")
+        print("[DASHBOARD] cryptography not installed — serving over plain HTTP.")
+        print("[DASHBOARD] For HTTPS run:  pip install cryptography")
         return False
 
     try:
@@ -443,10 +459,10 @@ def _ensure_certs() -> bool:
         except Exception:
             pass
 
-        print(f"[Dashboard] Generated a self-signed certificate for this machine: {certs}")
+        print(f"[DASHBOARD] Generated a self-signed certificate for this machine: {certs}")
         return True
     except Exception as e:
-        print(f"[Dashboard] Certificate generation failed ({e}) — serving over plain HTTP.")
+        print(f"[DASHBOARD] Certificate generation failed ({e}) — serving over plain HTTP.")
         return False
 
 
@@ -458,7 +474,8 @@ def _read(name: str) -> str:
 
 class DashboardServer:
 
-    def __init__(self):
+    def __init__(self, port: Optional[int] = None):
+        self.port                         = port or PORT
         self._ip                          = _local_ip()
         self._tokens: set[str]            = set()
         self._token_keys: dict[str, str]  = {}   # auth_token → session_key
@@ -468,12 +485,16 @@ class DashboardServer:
         self._command_queue               = asyncio.Queue()
         self._wake_callback               = None
         self._connect_callback            = None
+        self._ai_status_callback          = None
         self._pending_keys: dict[str, float] = {}
         self._device_sessions: dict[str, dict] = {}  # device_token → {session_key}
         self._phone_audio_queue: asyncio.Queue    = asyncio.Queue(maxsize=200)
         self._uploads_dir                 = UPLOADS_DIR
         self._login_html                  = _read("login.html")
         self._app_html                    = _read("app.html")
+        self._servers: list[uvicorn.Server] = []
+        self._is_running                  = False
+        self._start_time                  = time.time()
         self.app                          = self._build_app()
 
     # ── one-time key management ───────────────────────────────────────────
@@ -492,13 +513,21 @@ class DashboardServer:
 
     def get_url(self) -> str:
         proto = "https" if self._ssl_enabled() else "http"
-        return f"{proto}://{self._ip}:{PORT}"
+        return f"{proto}://{self._ip}:{self.port}"
+
+    def get_local_url(self) -> str:
+        proto = "https" if self._ssl_enabled() else "http"
+        return f"{proto}://127.0.0.1:{self.port}"
 
     def get_manual_url(self) -> str:
         """URL for manual browser entry. When HTTPS active, points to alias port (also HTTPS)."""
         if self._ssl_enabled():
-            return f"{self._ip}:{PORT + 1}"
-        return f"{self._ip}:{PORT}"
+            return f"{self._ip}:{self.port + 1}"
+        return f"{self._ip}:{self.port}"
+
+    def set_ai_status_callback(self, fn: Callable[[], str | bool | dict]) -> None:
+        """Register a callback returning current AI connection status."""
+        self._ai_status_callback = fn
 
     def _aes_key(self, session_key: str) -> bytes:
         if session_key not in self._aes_cache:
@@ -575,7 +604,15 @@ class DashboardServer:
             raw_html = _read("app.html")
             html = (raw_html
                     .replace("__IP__", self._ip)
-                    .replace("__PORT__", str(PORT)))
+                    .replace("__PORT__", str(self.port)))
+            return HTMLResponse(html)
+
+        @app.get("/youtube-learning", response_class=HTMLResponse)
+        async def youtube_learning_page():
+            raw_html = _read("app.html")
+            html = (raw_html
+                    .replace("__IP__", self._ip)
+                    .replace("__PORT__", str(self.port)))
             return HTMLResponse(html)
 
         @app.post("/login")
@@ -915,18 +952,114 @@ class DashboardServer:
             finally:
                 self._clients.discard(websocket)
 
+        @app.get("/health")
+        @app.get("/api/health")
+        async def health_check():
+            """Comprehensive health check endpoint for monitoring dashboard, AI session, DB, and WebSockets."""
+            # 1. AI session status
+            ai_status = "DISCONNECTED"
+            if self._ai_status_callback:
+                try:
+                    cb_res = self._ai_status_callback()
+                    if isinstance(cb_res, bool):
+                        ai_status = "CONNECTED" if cb_res else "DISCONNECTED"
+                    elif isinstance(cb_res, str):
+                        ai_status = cb_res
+                    elif isinstance(cb_res, dict):
+                        ai_status = cb_res.get("status", "CONNECTED" if cb_res.get("connected") else "DISCONNECTED")
+                except Exception as e:
+                    ai_status = f"ERROR ({e})"
+
+            # 2. Database status
+            db_status = "UNKNOWN"
+            try:
+                from intel.config import load_cyber_config
+                from intel.db import IntelligenceDB
+                cfg = load_cyber_config()
+                db = IntelligenceDB(cfg["db_path"])
+                with db.connection() as conn:
+                    conn.execute("SELECT 1").fetchone()
+                db_status = "HEALTHY"
+            except Exception as e:
+                db_status = f"UNAVAILABLE ({e})"
+
+            proto = "https" if self._ssl_enabled() else "http"
+            uptime_secs = round(time.time() - self._start_time, 1)
+
+            return JSONResponse({
+                "status": "HEALTHY",
+                "dashboard_server": "RUNNING",
+                "ai_session": ai_status,
+                "database": db_status,
+                "websockets": {
+                    "active_clients": len(self._clients),
+                    "phone_audio_live": not self._phone_audio_queue.empty()
+                },
+                "server_version": "24.0.0",
+                "port": self.port,
+                "protocol": proto,
+                "urls": {
+                    "local": self.get_local_url(),
+                    "lan": self.get_url(),
+                    "manual": self.get_manual_url()
+                },
+                "uptime_seconds": uptime_secs,
+            })
+
         @app.get("/api/system/health")
         async def system_health():
-            import psutil
-            cpu = psutil.cpu_percent(interval=None)
-            mem = psutil.virtual_memory()
+            cpu = None
+            mem_pct = None
+            ram_used = None
+            ram_total = None
+            disk_pct = None
+            disk_used = None
+            disk_total = None
+            net_sent_mb = None
+            net_recv_mb = None
+            try:
+                import psutil
+                cpu = psutil.cpu_percent(interval=None)
+                mem = psutil.virtual_memory()
+                mem_pct = mem.percent
+                ram_used = round(mem.used / (1024**3), 1)
+                ram_total = round(mem.total / (1024**3), 1)
+                disk = psutil.disk_usage(str(BASE_DIR))
+                disk_pct = disk.percent
+                disk_used = round(disk.used / (1024**3), 1)
+                disk_total = round(disk.total / (1024**3), 1)
+                net = psutil.net_io_counters()
+                if net:
+                    net_sent_mb = round(net.bytes_sent / (1024**2), 1)
+                    net_recv_mb = round(net.bytes_recv / (1024**2), 1)
+            except Exception:
+                pass
+
+            ai_status = "DISCONNECTED"
+            if self._ai_status_callback:
+                try:
+                    cb_res = self._ai_status_callback()
+                    if isinstance(cb_res, bool):
+                        ai_status = "CONNECTED" if cb_res else "DISCONNECTED"
+                    elif isinstance(cb_res, str):
+                        ai_status = cb_res
+                except Exception:
+                    pass
+
             return JSONResponse({
                 "ok": True,
                 "cpu_percent": cpu,
-                "ram_percent": mem.percent,
-                "ram_used_gb": round(mem.used / (1024**3), 1),
-                "ram_total_gb": round(mem.total / (1024**3), 1),
+                "ram_percent": mem_pct,
+                "ram_used_gb": ram_used,
+                "ram_total_gb": ram_total,
+                "disk_percent": disk_pct,
+                "disk_used_gb": disk_used,
+                "disk_total_gb": disk_total,
+                "net_sent_mb": net_sent_mb,
+                "net_recv_mb": net_recv_mb,
                 "status": "nominal",
+                "backend_connected": True,
+                "ai_session": ai_status,
                 "uptime": "Active",
                 "provider": "Google Gemini 2.5 Live / Ollama",
                 "stt_provider": "Web Speech API (Browser) & Faster-Whisper (Backend)",
@@ -982,7 +1115,7 @@ class DashboardServer:
             if intelligence_router:
                 app.include_router(intelligence_router)
         except Exception as e:
-            print(f"[Dashboard] Intelligence router not mounted: {e}")
+            print(f"[DASHBOARD] Intelligence router not mounted: {e}")
 
         # Mount Dedicated Information Pages API Router
         try:
@@ -990,16 +1123,34 @@ class DashboardServer:
             if info_router:
                 app.include_router(info_router)
         except Exception as e:
-            print(f"[Dashboard] Information router not mounted: {e}")
+            print(f"[DASHBOARD] Information router not mounted: {e}")
 
         # Mount Module 1 & 2 Interview Voice & Question Router
         try:
             from interview.api import router as interview_router
             if interview_router:
                 app.include_router(interview_router)
-                print("[Dashboard] Interview router mounted successfully.")
+                print("[DASHBOARD] Interview router mounted successfully.")
         except Exception as e:
-            print(f"[Dashboard] Interview router not mounted: {e}")
+            print(f"[DASHBOARD] Interview router not mounted: {e}")
+
+        # Mount Dedicated YouTube AI Learning Router
+        try:
+            from intel.youtube_learning_api import router as youtube_router
+            if youtube_router:
+                app.include_router(youtube_router)
+                print("[DASHBOARD] YouTube AI Learning router mounted successfully.")
+        except Exception as e:
+            print(f"[DASHBOARD] YouTube AI Learning router not mounted: {e}")
+
+        # Mount Phase 1 Autonomous Agent Core Router (/api/agents/*)
+        try:
+            from agents.api import router as agents_router
+            if agents_router:
+                app.include_router(agents_router)
+                print("[DASHBOARD] Agent Core router mounted successfully.")
+        except Exception as e:
+            print(f"[DASHBOARD] Agent Core router not mounted: {e}")
 
         return app
 
@@ -1007,28 +1158,34 @@ class DashboardServer:
     # ── serve ─────────────────────────────────────────────────────────────
 
     async def _serve_alias(self) -> None:
-        """Second HTTPS server on PORT+1 sharing the same app and in-memory state.
+        """Second HTTPS server on port+1 sharing the same app and in-memory state.
         Chrome HTTPS-upgrades any bare IP:PORT the user types, so this port also needs TLS.
         User types IP:8001 → Chrome tries https → self-signed cert warning → accept once → done."""
         ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
         ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
-        asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, PORT + 1)
+        alias_port = self.port + 1
+        asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, alias_port)
         cfg = uvicorn.Config(
-            self.app, host="0.0.0.0", port=PORT + 1, log_level="warning",
+            self.app, host="0.0.0.0", port=alias_port, log_level="warning",
             ssl_keyfile=str(ssl_key), ssl_certfile=str(ssl_cert),
         )
-        print(f"[Dashboard] Manual entry:  {self._ip}:{PORT + 1}  (type in browser, accept cert once)")
-        await uvicorn.Server(cfg).serve()
+        print(f"[DASHBOARD] Manual entry:  {self._ip}:{alias_port}  (type in browser, accept cert once)")
+        server = uvicorn.Server(cfg)
+        self._servers.append(server)
+        try:
+            await server.serve()
+        except asyncio.CancelledError:
+            pass
 
     async def serve(self) -> None:
         if not _DEPS_OK:
-            print("[Dashboard] fastapi/uvicorn not installed — dashboard disabled.")
-            print("[Dashboard] Run:  pip install fastapi 'uvicorn[standard]' cryptography")
+            print("[DASHBOARD] fastapi/uvicorn not installed — dashboard disabled.")
+            print("[DASHBOARD] Run:  pip install fastapi 'uvicorn[standard]' cryptography")
             return
 
         # Firewall setup runs in a thread — uvicorn starts immediately,
         # no waiting for UAC dialogs or subprocess timeouts.
-        asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, PORT)
+        asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, self.port)
 
         # Generate the TLS pair on first run so no private key ships in the repo.
         _ensure_certs()
@@ -1039,24 +1196,94 @@ class DashboardServer:
 
         if use_ssl:
             asyncio.create_task(self._serve_alias())
+            # Also start an HTTP→HTTPS redirect on port+2 so plain http:// links work
+            asyncio.create_task(self._serve_http_redirect())
 
         cfg = uvicorn.Config(
-            self.app, host="0.0.0.0", port=PORT, log_level="warning",
+            self.app, host="0.0.0.0", port=self.port, log_level="warning",
             **({"ssl_keyfile": str(ssl_key), "ssl_certfile": str(ssl_cert)} if use_ssl else {}),
         )
 
         proto = "https" if use_ssl else "http"
-        print(f"[Dashboard] {proto}://{self._ip}:{PORT}")
-        print("[Dashboard] Press 'Remote Control' in JARVIS UI to get the QR code.")
-        await uvicorn.Server(cfg).serve()
+        self._is_running = True
+        print(f"[DASHBOARD] Server: RUNNING")
+        print(f"[DASHBOARD] Local URL: {proto}://127.0.0.1:{self.port}")
+        print(f"[DASHBOARD] LAN URL: {proto}://{self._ip}:{self.port}")
+        print(f"[DASHBOARD] HTTPS: {'ENABLED (TLS Self-Signed)' if use_ssl else 'DISABLED (Plain HTTP)'}")
+        if use_ssl:
+            print(f"[DASHBOARD] HTTP redirect: http://127.0.0.1:{self.port + 2}  → redirects to https://")
+        print("[DASHBOARD] Press 'Remote Control' in JARVIS UI to get the QR code.")
+        
+        server = uvicorn.Server(cfg)
+        self._servers.append(server)
+        try:
+            await server.serve()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._is_running = False
+
+    async def _serve_http_redirect(self) -> None:
+        """Plain-HTTP server on port+2 that issues a 301 redirect to https://.
+
+        Lets users who accidentally type http://127.0.0.1:8002 get automatically
+        redirected to the HTTPS dashboard without manually editing the URL.
+        Port 8002 (8000+2) is used so it doesn't conflict with the HTTPS alias on 8001.
+        """
+        redirect_port = self.port + 2
+        https_port    = self.port
+
+        async def redirect_app(scope, receive, send):
+            if scope["type"] == "http":
+                path  = scope.get("path", "/")
+                query = scope.get("query_string", b"")
+                target = f"https://127.0.0.1:{https_port}{path}"
+                if query:
+                    target += "?" + query.decode("utf-8", errors="replace")
+                await send({
+                    "type": "http.response.start",
+                    "status": 301,
+                    "headers": [
+                        [b"location", target.encode()],
+                        [b"content-length", b"0"],
+                        [b"cache-control", b"no-cache"],
+                    ],
+                })
+                await send({"type": "http.response.body", "body": b""})
+
+        try:
+            cfg = uvicorn.Config(
+                redirect_app, host="0.0.0.0", port=redirect_port,
+                log_level="warning",
+            )
+            server = uvicorn.Server(cfg)
+            self._servers.append(server)
+            asyncio.get_event_loop().run_in_executor(
+                None, _ensure_network_access, redirect_port
+            )
+            await server.serve()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            # Non-fatal — redirect port may already be in use; HTTPS server keeps running
+            print(f"[DASHBOARD] HTTP-redirect server error (non-fatal): {e}")
+
+    async def stop(self) -> None:
+        """Gracefully stop running uvicorn server instances."""
+        self._is_running = False
+        for s in list(self._servers):
+            s.should_exit = True
+        self._servers.clear()
+        print("[DASHBOARD] Server stopped gracefully.")
 
 
 if __name__ == "__main__":
     srv = DashboardServer()
     # Pre-generate a key for convenience when run standalone
     k = srv.new_key(expiry_secs=86400)
-    print(f"\n[Dashboard] Standalone server started.")
-    print(f"[Dashboard] Login PIN / Key: {k}")
-    print(f"[Dashboard] Auto-login URL: {srv.get_url()}/auto-login?key={k}")
+    print(f"\n[DASHBOARD] Standalone server started.")
+    print(f"[DASHBOARD] Login PIN / Key: {k}")
+    print(f"[DASHBOARD] Auto-login URL: {srv.get_url()}/auto-login?key={k}")
     asyncio.run(srv.serve())
+
 

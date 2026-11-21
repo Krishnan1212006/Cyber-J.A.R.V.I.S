@@ -37,8 +37,9 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 from .config import load_cyber_config
-from .collector_service import THNCollectorService
+from .collector_service import CyberNewsCollector, THNCollectorService
 from .db import IntelligenceDB
+from .models import ALL_CYBER_SOURCES
 from .thn_provider import THNDataProvider
 
 
@@ -51,43 +52,44 @@ def setup_cli_logging(verbose: bool = False) -> None:
     )
 
 
-def run_doctor(service: THNCollectorService) -> int:
-    """Run environmental and connectivity diagnostics."""
+def run_doctor(collector: CyberNewsCollector) -> int:
+    """Run environmental and connectivity diagnostics across all 4 sources."""
     print("\n[DOCTOR] Running JARVIS Cyber-Intel Diagnostics...")
-    print("=" * 60)
+    print("=" * 65)
 
     all_ok = True
 
     # 1. Database Check
     try:
-        count = service.db.get_article_count()
-        print(f"  [OK ] Database connected: {service.db.db_path} ({count:,} articles)")
+        count = collector.db.get_article_count()
+        print(f"  [OK ] Database connected: {collector.db.db_path} ({count:,} articles)")
     except Exception as e:
         print(f"  [ERR] Database error: {e}")
         all_ok = False
 
-    # 2. Network & Blogger Feed Reachability Check
-    try:
-        t0 = time.monotonic()
-        entries = service.provider.collect_latest(limit=2)
-        latency = (time.monotonic() - t0) * 1000
-        if entries:
-            print(f"  [OK ] THN feed reachable: {len(entries)} sample entries ({latency:.0f}ms)")
-        else:
-            print("  [!  ] THN feed reachable but returned 0 entries")
-    except Exception as e:
-        print(f"  [ERR] THN feed connectivity failed: {e}")
-        all_ok = False
+    # 2. Network & Feed Reachability Check for all 4 sources
+    for src, provider in collector.connectors.items():
+        try:
+            t0 = time.monotonic()
+            entries = provider.collect_latest(limit=2)
+            latency = (time.monotonic() - t0) * 1000
+            if entries:
+                print(f"  [OK ] {src:<18} reachable: {len(entries)} sample entries ({latency:.0f}ms)")
+            else:
+                print(f"  [!  ] {src:<18} reachable but returned 0 entries")
+        except Exception as e:
+            print(f"  [ERR] {src:<18} connectivity failed: {e}")
+            all_ok = False
 
     # 3. FTS5 Search Index Check
     try:
-        _ = service.db.search_articles_fts("security", limit=1)
+        _ = collector.db.search_articles_fts("security", limit=1)
         print("  [OK ] SQLite FTS5 full-text search: operational")
     except Exception as e:
         print(f"  [ERR] FTS5 search error: {e}")
         all_ok = False
 
-    print("=" * 60)
+    print("=" * 65)
     if all_ok:
         print("All diagnostic checks passed. System is ready.\n")
         return 0
@@ -98,22 +100,29 @@ def run_doctor(service: THNCollectorService) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="JARVIS Cybersecurity Intelligence Data Collector (Phase 1)"
+        description="JARVIS Cybersecurity Intelligence Multi-Source Data Collector"
     )
     parser.add_argument("--latest", action="store_true",
-                        help="Ingest latest articles from The Hacker News")
+                        help="Ingest latest articles from cybersecurity news sources")
     parser.add_argument("--historical", action="store_true",
                         help="Ingest historical articles across a date range")
+    parser.add_argument("--source", type=str, default="all",
+                        choices=["all"] + list(ALL_CYBER_SOURCES),
+                        help="Source to collect from (default: all)")
     parser.add_argument("--start", type=str,
                         help="Start date for historical ingestion (YYYY-MM-DD)")
     parser.add_argument("--end", type=str,
                         help="End date for historical ingestion (YYYY-MM-DD)")
     parser.add_argument("--limit", type=int, default=20,
-                        help="Max articles to ingest / rows to show (default: 20)")
+                        help="Max articles per source to ingest / rows to show (default: 20)")
     parser.add_argument("--no-full-body", action="store_true",
                         help="Skip fetching full article HTML bodies")
     parser.add_argument("--no-resume", action="store_true",
                         help="Do not resume historical collection from checkpoint")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="Retry collection for sources in ERROR/DEGRADED status")
+    parser.add_argument("--health", action="store_true",
+                        help="Show per-source connector health status")
     parser.add_argument("--stats", action="store_true",
                         help="Display database and collection metrics")
     parser.add_argument("--runs", action="store_true",
@@ -121,7 +130,7 @@ def main() -> int:
     parser.add_argument("--search", type=str,
                         help="Full-text search query across stored articles")
     parser.add_argument("--doctor", action="store_true",
-                        help="Run health check and diagnostics")
+                        help="Run health check and diagnostics across all 4 sources")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Enable verbose debug logging")
 
@@ -130,12 +139,33 @@ def main() -> int:
 
     config = load_cyber_config()
     db = IntelligenceDB(config["db_path"])
-    provider = THNDataProvider(config)
-    service = THNCollectorService(db=db, provider=provider, config=config)
+    collector = CyberNewsCollector(db=db, config=config)
 
     # ── Doctor ────────────────────────────────────────────────────────────────
     if args.doctor:
-        return run_doctor(service)
+        return run_doctor(collector)
+
+    # ── Health ────────────────────────────────────────────────────────────────
+    if args.health:
+        statuses = collector.get_source_health()
+        print("\n[HEALTH] Per-Source Connector Health")
+        print("=" * 80)
+        for h in statuses:
+            print(
+                f"  {h.connector_id:<28} | Status: {h.status:<12} | "
+                f"Processed: {h.records_processed:>5} | Last Run: {h.last_run_at or 'N/A'}"
+            )
+            if h.last_error:
+                print(f"    Error: {h.last_error}")
+        print("=" * 80 + "\n")
+        return 0
+
+    # ── Retry Failed ──────────────────────────────────────────────────────────
+    if args.retry_failed:
+        res = collector.retry_failed_jobs()
+        print("\n[RETRY] Retry Failed Collection Jobs:")
+        print(json.dumps(res, indent=2))
+        return 0
 
     # ── Stats ─────────────────────────────────────────────────────────────────
     if args.stats:
@@ -157,23 +187,24 @@ def main() -> int:
     if args.runs:
         runs = db.get_latest_runs(limit=args.limit or 10)
         print("\n[RUNS] Recent Collection Runs")
-        print("=" * 90)
+        print("=" * 105)
         for r in runs:
             print(
-                f"  [{r.run_id}] {r.started_at} | Mode: {r.mode:<10} | Status: {r.status:<9} | "
-                f"Found: {r.discovered_count:>4} | New: {r.new_count:>4} | "
-                f"Dup: {r.duplicate_count:>4} | Fail: {r.failed_count:>4}"
+                f"  [{r.run_id}] {r.started_at} | Src: {r.source:<18} | Mode: {r.mode:<10} | Status: {r.status:<9} | "
+                f"Found: {r.discovered_count:>3} | New: {r.new_count:>3} | "
+                f"Dup: {r.duplicate_count:>3} | Fail: {r.failed_count:>3}"
             )
-        print("=" * 90 + "\n")
+        print("=" * 105 + "\n")
         return 0
 
     # ── Search ────────────────────────────────────────────────────────────────
     if args.search:
-        results = db.search_articles_fts(args.search, limit=args.limit or 10)
+        src_filter = None if args.source == "all" else args.source
+        results = db.search_articles_fts(args.search, limit=args.limit or 10, source=src_filter)
         print(f"\n[SEARCH] Results for '{args.search}' ({len(results)} matches):")
         print("=" * 70)
         for i, art in enumerate(results, 1):
-            print(f"  {i:>2}. [{art.published_at[:10]}] {art.title}")
+            print(f"  {i:>2}. [{art.source}] [{art.published_at[:10]}] {art.title}")
             print(f"      URL: {art.url}")
             if art.summary:
                 print(f"      Summary: {art.summary[:140]}...")
@@ -183,8 +214,9 @@ def main() -> int:
 
     # ── Latest ────────────────────────────────────────────────────────────────
     if args.latest:
-        print(f"\n[COLLECT] Running Latest Collection (limit={args.limit})...")
-        stats = service.collect_latest(
+        print(f"\n[COLLECT] Running Latest Collection (source={args.source}, limit={args.limit})...")
+        stats = collector.collect_latest(
+            source=args.source,
             limit=args.limit,
             fetch_full_body=not args.no_full_body,
         )
@@ -198,12 +230,13 @@ def main() -> int:
             print("Error: --historical requires both --start YYYY-MM-DD and --end YYYY-MM-DD")
             return 1
         print(
-            f"\n[COLLECT] Historical Collection | {args.start} to {args.end} | "
+            f"\n[COLLECT] Historical Collection | source={args.source} | {args.start} to {args.end} | "
             f"max={args.limit} | resume={not args.no_resume}"
         )
-        stats = service.collect_historical(
+        stats = collector.collect_historical(
             start_date=args.start,
             end_date=args.end,
+            source=args.source,
             max_articles=args.limit,
             resume=not args.no_resume,
             fetch_full_body=not args.no_full_body,

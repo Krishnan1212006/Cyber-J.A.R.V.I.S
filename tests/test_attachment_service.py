@@ -117,17 +117,50 @@ class TestAttachmentProcessingService(unittest.TestCase):
         self.assertIn("def login(): pass", prompt)
         self.assertIn("END OF ATTACHMENTS", prompt)
 
-    def test_compose_prompt_folder_summary(self):
-        folder = self.base_path / "cyber_lab"
-        folder.mkdir()
-        (folder / "scan.py").write_text("# nmap scan script", encoding="utf-8")
+    def test_inspect_and_analyze_png_image(self):
+        from PIL import Image, ImageDraw
+        img_path = self.base_path / "test_screenshot.png"
+        img = Image.new("RGB", (180, 70), color=(255, 255, 255))
+        d = ImageDraw.Draw(img)
+        d.text((10, 25), "SECURITY SCAN OK", fill=(0, 0, 0))
+        img.save(img_path, format="PNG")
 
-        item = self.service.inspect_path(str(folder))
-        prompt = self.service.compose_prompt("Analyze this folder", [item])
+        item = self.service.inspect_path(str(img_path))
+        self.assertEqual(item.status, "ready")
+        self.assertEqual(item.category, "image")
+        self.assertEqual(item.icon, "🖼️")
 
-        self.assertIn("Folder 'cyber_lab'", prompt)
-        self.assertIn("Discovered Files: 1", prompt)
-        self.assertIn("scan.py", prompt)
+        content = self.service.extract_attachment_content(item)
+        self.assertIn("Image Attachment Analysis: test_screenshot.png", content)
+        self.assertIn("Format**: PNG", content)
+        self.assertIn("180 × 70", content)
+        self.assertIn("Color Space / Mode", content)
+
+    def test_inspect_and_analyze_all_image_extensions(self):
+        for ext in ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "tiff", "ico"]:
+            fake_img = self.base_path / f"sample.{ext}"
+            fake_img.write_bytes(b"dummy image bytes")
+            item = self.service.inspect_path(str(fake_img))
+            self.assertEqual(item.category, "image", f"Extension .{ext} should be categorized as image")
+
+    def test_extract_svg_image(self):
+        svg_file = self.base_path / "diagram.svg"
+        svg_content = (
+            '<svg viewBox="0 0 100 100">'
+            '<title>Firewall Architecture</title>'
+            '<text x="10" y="20">Edge Router</text>'
+            '<text x="10" y="50">DMZ Gateway</text>'
+            '</svg>'
+        )
+        svg_file.write_text(svg_content, encoding="utf-8")
+        item = self.service.inspect_path(str(svg_file))
+        self.assertEqual(item.category, "image")
+
+        content = self.service.extract_attachment_content(item)
+        self.assertIn("Vector SVG", content)
+        self.assertIn("Firewall Architecture", content)
+        self.assertIn("Edge Router", content)
+        self.assertIn("DMZ Gateway", content)
 
 
 if __name__ == "__main__":

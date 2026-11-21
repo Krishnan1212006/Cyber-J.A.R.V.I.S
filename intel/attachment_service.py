@@ -79,6 +79,13 @@ EXT_CATEGORIES = {
     "gif": ("image", "🖼️"),
     "bmp": ("image", "🖼️"),
     "svg": ("image", "📐"),
+    "tiff": ("image", "🖼️"),
+    "tif": ("image", "🖼️"),
+    "ico": ("image", "🖼️"),
+    "jfif": ("image", "🖼️"),
+    "avif": ("image", "🖼️"),
+    "heic": ("image", "🖼️"),
+    "heif": ("image", "🖼️"),
     # Archives
     "zip": ("archive", "📦"),
     "tar": ("archive", "📦"),
@@ -352,16 +359,12 @@ class AttachmentProcessingService:
             except Exception:
                 return f"[Presentation document: {item.name} ({format_bytes(item.size_bytes)})]"
 
-        # 4. Images
-        if ext in {"png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"}:
-            try:
-                from PIL import Image
-                with Image.open(p) as img:
-                    w, h = img.size
-                    fmt = img.format
-                return f"[Image attachment: {item.name} | Format: {fmt} | Dimensions: {w}x{h} px | Size: {format_bytes(item.size_bytes)}]"
-            except Exception:
-                return f"[Image attachment: {item.name} ({format_bytes(item.size_bytes)})]"
+        # 4. Images (all formats: PNG, JPG, JPEG, WEBP, GIF, BMP, SVG, TIFF, ICO, AVIF, HEIC, etc.)
+        if ext in {
+            "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg",
+            "tiff", "tif", "ico", "jfif", "avif", "heic", "heif"
+        }:
+            return self._analyze_image_file(p, item)
 
         # 5. Archive listing
         if ext == "zip":
@@ -375,6 +378,178 @@ class AttachmentProcessingService:
 
         # Fallback
         return f"[File attachment: {item.name} | Type: {ext} | Size: {format_bytes(item.size_bytes)}]"
+
+    def _analyze_image_file(self, p: Path, item: AttachmentItem) -> str:
+        """
+        Deep analysis for all image formats (PNG, JPG, JPEG, WEBP, GIF, BMP, SVG, TIFF, ICO, etc.).
+        Extracts technical geometry, color characteristics, embedded metadata chunks,
+        performs local optical character recognition (OCR), and attaches multimodal AI vision intelligence.
+        """
+        ext = p.suffix.lower().lstrip(".")
+        size_fmt = format_bytes(item.size_bytes)
+
+        # 1. Vector SVG analysis
+        if ext == "svg":
+            try:
+                raw_svg = p.read_text(encoding="utf-8", errors="replace")[:12000]
+                text_matches = re.findall(r"<text[^>]*>(.*?)</text>", raw_svg, flags=re.DOTALL | re.IGNORECASE)
+                titles = re.findall(r"<title[^>]*>(.*?)</title>", raw_svg, flags=re.DOTALL | re.IGNORECASE)
+                extracted_texts = [re.sub(r"<[^>]+>", "", t).strip() for t in text_matches if t.strip()]
+                title_str = ", ".join(t.strip() for t in titles if t.strip())
+
+                lines = [
+                    f"### Image Attachment Analysis: {item.name} (Vector SVG)",
+                    f"- **Format**: SVG (Scalable Vector Graphics) | **Size**: {size_fmt}",
+                ]
+                if title_str:
+                    lines.append(f"- **Graphic Title / Description**: {title_str}")
+                if extracted_texts:
+                    lines.append(f"- **Extracted Text / Labels ({len(extracted_texts)} items)**:\n  - " + "\n  - ".join(extracted_texts[:30]))
+                lines.append(f"\n[Raw SVG Structure Preview]:\n```xml\n{raw_svg[:1200]}\n```")
+                return "\n".join(lines)
+            except Exception as e:
+                return f"[Vector Graphic: {item.name} ({size_fmt}) - XML read error: {e}]"
+
+        # 2. Raster Images (PNG, JPG, WEBP, BMP, GIF, TIFF, etc.)
+        try:
+            from PIL import Image, ExifTags
+        except ImportError:
+            return f"[Image attachment: {item.name} | Format: {ext.upper()} | Size: {size_fmt}]"
+
+        try:
+            with Image.open(p) as img:
+                w, h = img.size
+                fmt = (img.format or ext).upper()
+                mode = img.mode
+                aspect_ratio = f"{w/h:.2f}:1" if h else "N/A"
+                has_alpha = "A" in mode or "transparency" in img.info
+
+                sections = [
+                    f"### Image Attachment Analysis: {item.name}",
+                    f"- **Format**: {fmt} (Extension: .{ext})",
+                    f"- **Dimensions**: {w} × {h} pixels (Aspect Ratio: {aspect_ratio})",
+                    f"- **Color Space / Mode**: {mode} ({'Alpha/Transparency channel active' if has_alpha else 'Opaque / No Alpha'})",
+                    f"- **File Size**: {size_fmt}",
+                ]
+
+                # Animation check (GIF, animated WEBP)
+                n_frames = getattr(img, "n_frames", 1)
+                if n_frames > 1:
+                    sections.append(f"- **Animation**: Multi-frame image with {n_frames} frames")
+
+                # Visual profile & luminance heuristic
+                try:
+                    thumb = img.convert("RGB").resize((32, 32))
+                    pixels = list(thumb.getdata())
+                    avg_lum = sum(0.299 * r + 0.587 * g + 0.114 * b for r, g, b in pixels) / len(pixels)
+                    if avg_lum < 85:
+                        theme_hint = "Dark background (terminal output, dark-themed code editor/IDE, cyber dashboard, or dark mode UI)"
+                    elif avg_lum > 175:
+                        theme_hint = "Light background (white document, scanned page, bright web UI, or daylight photo)"
+                    else:
+                        theme_hint = "Medium balance contrast"
+                    sections.append(f"- **Visual Profile**: Average brightness {avg_lum:.1f}/255 — {theme_hint}")
+                except Exception:
+                    pass
+
+                # PNG metadata chunks (tEXt, zTXt, iTXt - parameters, comments, creation tools)
+                if ext == "png" and getattr(img, "info", None):
+                    png_chunks = []
+                    for k, v in img.info.items():
+                        if isinstance(v, (str, bytes)):
+                            v_str = v.decode("utf-8", errors="replace") if isinstance(v, bytes) else str(v)
+                            if len(v_str) > 300:
+                                v_str = v_str[:300] + "..."
+                            png_chunks.append(f"  - **{k}**: {v_str}")
+                    if png_chunks:
+                        sections.append("- **Embedded PNG Metadata Chunks**:\n" + "\n".join(png_chunks[:10]))
+
+                # EXIF metadata (JPEG/TIFF)
+                try:
+                    exif_data = img.getexif()
+                    if exif_data:
+                        exif_items = []
+                        for tag_id, val in exif_data.items():
+                            tag_name = ExifTags.TAGS.get(tag_id, str(tag_id))
+                            if tag_name in ("Make", "Model", "Software", "DateTime", "Artist", "Copyright", "Orientation", "ImageDescription"):
+                                exif_items.append(f"  - **{tag_name}**: {val}")
+                        if exif_items:
+                            sections.append("- **EXIF Metadata**:\n" + "\n".join(exif_items[:8]))
+                except Exception:
+                    pass
+
+                # Steganography / Trailing Bytes Integrity Check
+                try:
+                    raw_bytes = p.read_bytes()
+                    if ext == "png":
+                        iend_marker = b"IEND\xaeB`\x82"
+                        iend_pos = raw_bytes.find(iend_marker)
+                        if iend_pos != -1:
+                            trailing_len = len(raw_bytes) - (iend_pos + len(iend_marker))
+                            if trailing_len > 0:
+                                sections.append(f"- **Forensic Notice**: Detected {trailing_len} trailing bytes after standard PNG IEND marker (potential embedded data/steganography).")
+                    elif ext in ("jpg", "jpeg"):
+                        eoi_marker = b"\xff\xd9"
+                        eoi_pos = raw_bytes.rfind(eoi_marker)
+                        if eoi_pos != -1 and (len(raw_bytes) - (eoi_pos + 2)) > 32:
+                            sections.append(f"- **Forensic Notice**: Detected {len(raw_bytes) - (eoi_pos + 2)} extra bytes past JPEG EOI marker.")
+                except Exception:
+                    pass
+
+                # Optical Character Recognition (OCR) Text Extraction
+                ocr_text = ""
+                try:
+                    import pytesseract
+                    import shutil
+                    t_bin = shutil.which("tesseract") or r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+                    if os.path.exists(t_bin):
+                        pytesseract.pytesseract.tesseract_cmd = t_bin
+                    ocr_res = pytesseract.image_to_string(img)
+                    if ocr_res and ocr_res.strip():
+                        ocr_text = ocr_res.strip()
+                        if len(ocr_text) > 4000:
+                            ocr_text = ocr_text[:4000] + "\n[... truncated remaining OCR text ...]"
+                        sections.append(f"\n#### Extracted Text via Optical Character Recognition (OCR):\n```text\n{ocr_text}\n```")
+                except Exception:
+                    pass
+
+                # Multimodal AI Vision Analysis (Gemini)
+                if not os.environ.get("SKIP_GEMINI_VISION") and not os.environ.get("PYTEST_CURRENT_TEST"):
+                    try:
+                        import concurrent.futures
+                        config_path = Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
+                        if config_path.exists():
+                            cfg = json.loads(config_path.read_text(encoding="utf-8"))
+                            api_key = cfg.get("gemini_api_key", "").strip()
+                            if api_key and not api_key.startswith("AQ.dummy"):
+                                from google import genai
+                                client = genai.Client(api_key=api_key)
+                                prompt = (
+                                    "Provide a detailed technical and semantic analysis of this image. "
+                                    "1. Identify the exact type: architecture diagram, UI screenshot, terminal/code, cybersecurity scan/report, document, or photo. "
+                                    "2. Detail all components, text, diagrams, data points, relationships, and entities. "
+                                    "3. If errors, vulnerabilities, or commands are visible, explain them and suggest implications."
+                                )
+                                analysis_img = img.convert("RGB") if img.mode not in ("RGB", "L") else img
+                                
+                                def _call():
+                                    return client.models.generate_content(
+                                        model="gemini-2.5-flash",
+                                        contents=[prompt, analysis_img]
+                                    )
+
+                                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                                    future = pool.submit(_call)
+                                    resp = future.result(timeout=10)
+                                    ai_text = (resp.text or "").strip()
+                                    if ai_text:
+                                        sections.append(f"\n#### Multimodal Visual Intelligence Analysis:\n{ai_text}")
+                    except Exception:
+                        pass
+
+                return "\n".join(sections)
+        except Exception as exc:
+            return f"[Image attachment: {item.name} ({size_fmt}) | Error reading image: {exc}]"
 
     def _extract_folder_summary(self, item: AttachmentItem, p: Path) -> str:
         lines = [
